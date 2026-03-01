@@ -59,8 +59,8 @@ function GrokCore() {
         <mesh ref={eyeRef}>
           <sphereGeometry args={[0.6, 64, 64]} />
           <MeshDistortMaterial
-            color="#8b5cf6"
-            emissive="#7c3aed"
+            color="#22c55e"
+            emissive="#16a34a"
             emissiveIntensity={2}
             roughness={0.1}
             metalness={0.8}
@@ -73,14 +73,14 @@ function GrokCore() {
       {/* Inner glow halo */}
       <mesh>
         <sphereGeometry args={[0.75, 32, 32]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.15} />
+        <meshBasicMaterial color="#22c55e" transparent opacity={0.15} />
       </mesh>
 
       {/* Ring 1 — main orbital */}
       <mesh ref={ringRef1} geometry={ringGeometry}>
         <meshStandardMaterial
-          color="#a78bfa"
-          emissive="#7c3aed"
+          color="#86efac"
+          emissive="#22c55e"
           emissiveIntensity={1.5}
           metalness={0.9}
           roughness={0.1}
@@ -90,8 +90,8 @@ function GrokCore() {
       {/* Ring 2 — inner orbital */}
       <mesh ref={ringRef2} geometry={innerRingGeometry} rotation={[Math.PI / 3, 0, Math.PI / 6]}>
         <meshStandardMaterial
-          color="#c4b5fd"
-          emissive="#8b5cf6"
+          color="#bbf7d0"
+          emissive="#86efac"
           emissiveIntensity={1.2}
           metalness={0.9}
           roughness={0.1}
@@ -101,8 +101,8 @@ function GrokCore() {
       {/* Ring 3 — outer orbital */}
       <mesh ref={ringRef3} geometry={outerRingGeometry} rotation={[Math.PI / 4, Math.PI / 5, 0]}>
         <meshStandardMaterial
-          color="#6d28d9"
-          emissive="#5b21b6"
+          color="#15803d"
+          emissive="#14532d"
           emissiveIntensity={1}
           metalness={0.9}
           roughness={0.15}
@@ -115,13 +115,13 @@ function GrokCore() {
         scale={5}
         size={2}
         speed={0.4}
-        color="#a78bfa"
+        color="#86efac"
       />
 
       {/* Accent point lights on the rings */}
-      <pointLight position={[2, 0, 0]} color="#8b5cf6" intensity={2} distance={5} />
-      <pointLight position={[-2, 0, 0]} color="#6d28d9" intensity={2} distance={5} />
-      <pointLight position={[0, 2, 0]} color="#a78bfa" intensity={1.5} distance={4} />
+      <pointLight position={[2, 0, 0]} color="#22c55e" intensity={2} distance={5} />
+      <pointLight position={[-2, 0, 0]} color="#15803d" intensity={2} distance={5} />
+      <pointLight position={[0, 2, 0]} color="#86efac" intensity={1.5} distance={4} />
     </group>
   );
 }
@@ -154,7 +154,7 @@ function Particles() {
     <points ref={ref} geometry={geometry}>
       <pointsMaterial
         size={0.03}
-        color="#6d28d9"
+        color="#15803d"
         transparent
         opacity={0.6}
         sizeAttenuation
@@ -168,7 +168,7 @@ export function GrokLogo3D() {
     <div className="w-full h-[500px] md:h-[600px] relative">
       {/* Glow backdrop */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] rounded-full bg-violet-600/20 blur-[100px]" />
+        <div className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] rounded-full bg-green-500/20 blur-[100px]" />
       </div>
 
       <Canvas
