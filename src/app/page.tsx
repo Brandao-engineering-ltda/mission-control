@@ -27,7 +27,7 @@ function LandingPage({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden"
+      className="h-screen bg-background flex flex-col items-center relative overflow-hidden"
     >
       {/* Background grid */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(139,92,246,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(139,92,246,0.03)_1px,transparent_1px)] bg-[size:60px_60px]" />
@@ -38,14 +38,14 @@ function LandingPage({
       {/* Bottom gradient fade */}
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background to-transparent z-10" />
 
-      {/* Main content - centered vertically */}
-      <div className="relative z-20 flex flex-col items-center justify-center flex-1 w-full py-12 sm:py-16">
-        {/* Title */}
+      {/* Main content — fills exactly 100vh, no scroll */}
+      <div className="relative z-20 flex flex-col items-center w-full h-full py-6 sm:py-8">
+        {/* Title — pinned to top */}
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-center mb-2"
+          className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-center mb-1"
         >
           <span className="bg-gradient-to-b from-white via-white/90 to-white/50 bg-clip-text text-transparent">
             Mission{" "}
@@ -59,19 +59,20 @@ function LandingPage({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5, duration: 0.5 }}
-          className="text-sm text-muted-foreground/60 mb-8 sm:mb-12"
+          className="text-xs sm:text-sm text-muted-foreground/60 mb-4 sm:mb-6"
         >
           AI Agent Orchestration Hub
         </motion.p>
 
-        {/* Logo - central element */}
-        <MissionLogo onClick={() => setTasksOpen(true)} />
+        {/* Logo — centered in remaining space */}
+        <div className="flex-1 flex items-center justify-center min-h-0">
+          <MissionLogo onClick={() => setTasksOpen(true)} />
+        </div>
 
-        {/* Spacer */}
-        <div className="flex-1 min-h-8 sm:min-h-12" />
-
-        {/* Agent cards at bottom */}
-        <AgentCards onAgentClick={onEnterDashboard} />
+        {/* Agent cards — pinned to bottom */}
+        <div className="pt-4 sm:pt-6 pb-2">
+          <AgentCards onAgentClick={onEnterDashboard} />
+        </div>
       </div>
 
       {/* Tasks dialog */}
