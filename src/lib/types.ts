@@ -22,7 +22,7 @@ export interface AgentLog {
   taskId: string | null;
   timestamp: string;
   details: string;
-  status: "success" | "error" | "info";
+  status: "success" | "error" | "info" | "warning";
 }
 
 export interface DashboardStats {

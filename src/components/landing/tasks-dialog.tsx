@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Clock, ArrowRight, Zap, AlertCircle } from "lucide-react";
+import { X, Clock, ArrowRight, Zap, AlertCircle, Wifi, WifiOff } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PRIORITY_CONFIG } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +86,7 @@ function getStatusLabel(status: string) {
 
 export function TasksDialog({ open, onClose }: TasksDialogProps) {
   const tasks = useStore((s) => s.tasks);
+  const isOnline = useStore((s) => s.isOnline);
 
   // Show in-progress, review, and todo tasks (active work)
   const activeTasks = tasks.filter(
@@ -131,11 +132,20 @@ export function TasksDialog({ open, onClose }: TasksDialogProps) {
                   <Zap className="h-4 w-4 text-violet-400" />
                 </motion.div>
                 <div>
-                  <h2 className="text-base font-semibold text-foreground">
+                  <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
                     Active Tasks
+                    {isOnline ? (
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                      </span>
+                    ) : (
+                      <WifiOff className="h-3 w-3 text-amber-400" />
+                    )}
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     {activeTasks.length} task{activeTasks.length !== 1 ? "s" : ""} in progress
+                    {isOnline ? " • live" : " • demo"}
                   </p>
                 </div>
               </div>
@@ -151,77 +161,93 @@ export function TasksDialog({ open, onClose }: TasksDialogProps) {
 
             {/* Task list */}
             <div className="overflow-y-auto max-h-[60vh] p-4 space-y-2">
-              {activeTasks.length === 0 ? (
-                <motion.div
-                  className="flex flex-col items-center justify-center py-12 text-center"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                  <p className="text-sm text-muted-foreground/60">
-                    No active tasks right now
-                  </p>
-                  <p className="text-xs text-muted-foreground/40 mt-1">
-                    All caught up! 🎉
-                  </p>
-                </motion.div>
-              ) : (
-                activeTasks.map((task, i) => (
+              <AnimatePresence initial={false}>
+                {activeTasks.length === 0 ? (
                   <motion.div
-                    key={task.id}
-                    custom={i}
-                    variants={itemVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="group rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] p-4 transition-colors duration-200"
+                    className="flex flex-col items-center justify-center py-12 text-center"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.3 }}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 ${getStatusColor(task.status)}`}
-                          >
-                            {getStatusLabel(task.status)}
-                          </Badge>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 ${PRIORITY_CONFIG[task.priority].badge}`}
-                          >
-                            {PRIORITY_CONFIG[task.priority].label}
-                          </Badge>
-                        </div>
-                        <h3 className="text-sm font-medium text-foreground/90 truncate">
-                          {task.title}
-                        </h3>
-                        <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-2">
-                          {task.description}
-                        </p>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-violet-400 transition-colors shrink-0 mt-1" />
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center gap-3 mt-3 pt-2 border-t border-white/5">
-                      {task.assignee && (
-                        <span className="text-[10px] text-muted-foreground/50">
-                          {task.assignee}
-                        </span>
-                      )}
-                      {task.dueDate && (
-                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50 ml-auto">
-                          <Clock className="h-3 w-3" />
-                          {new Date(task.dueDate).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                      )}
-                    </div>
+                    <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm text-muted-foreground/60">
+                      No active tasks right now
+                    </p>
+                    <p className="text-xs text-muted-foreground/40 mt-1">
+                      All caught up! 🎉
+                    </p>
                   </motion.div>
-                ))
-              )}
+                ) : (
+                  activeTasks.map((task, i) => (
+                    <motion.div
+                      key={task.id}
+                      custom={i}
+                      variants={itemVariants}
+                      initial="hidden"
+                      animate="visible"
+                      exit={{ opacity: 0, x: 20, transition: { duration: 0.2 } }}
+                      layout
+                      className="group rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] p-4 transition-colors duration-200"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 ${getStatusColor(task.status)}`}
+                            >
+                              {getStatusLabel(task.status)}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 ${PRIORITY_CONFIG[task.priority].badge}`}
+                            >
+                              {PRIORITY_CONFIG[task.priority].label}
+                            </Badge>
+                          </div>
+                          <h3 className="text-sm font-medium text-foreground/90 truncate">
+                            {task.title}
+                          </h3>
+                          <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-2">
+                            {task.description}
+                          </p>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-violet-400 transition-colors shrink-0 mt-1" />
+                      </div>
+
+                      {/* Footer */}
+                      <div className="flex items-center gap-3 mt-3 pt-2 border-t border-white/5">
+                        {task.assignee && (
+                          <span className="text-[10px] text-muted-foreground/50">
+                            {task.assignee}
+                          </span>
+                        )}
+                        {task.tags.length > 0 && (
+                          <div className="flex gap-1">
+                            {task.tags.slice(0, 3).map((tag) => (
+                              <span
+                                key={tag}
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground/40"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {task.dueDate && (
+                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50 ml-auto">
+                            <Clock className="h-3 w-3" />
+                            {new Date(task.dueDate).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Bottom gradient */}

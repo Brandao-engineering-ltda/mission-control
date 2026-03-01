@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,8 +23,18 @@ import {
 import { TaskPriority, TaskStatus } from "@/lib/types";
 import { useStore } from "@/lib/store";
 
+const AGENT_OPTIONS = [
+  { value: "", label: "Unassigned" },
+  { value: "Developer Agent", label: "Developer" },
+  { value: "Researcher Agent", label: "Researcher" },
+  { value: "Marketer Agent", label: "Marketer" },
+  { value: "Reviewer Agent", label: "Reviewer" },
+  { value: "Ideator Agent", label: "Ideator" },
+];
+
 export function CreateTaskDialog() {
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>("todo");
@@ -35,32 +45,37 @@ export function CreateTaskDialog() {
 
   const addTask = useStore((s) => s.addTask);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    addTask({
-      title: title.trim(),
-      description: description.trim(),
-      status,
-      priority,
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-      assignee: assignee.trim() || null,
-      dueDate: dueDate || null,
-    });
+    setSaving(true);
+    try {
+      await addTask({
+        title: title.trim(),
+        description: description.trim(),
+        status,
+        priority,
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        assignee: assignee || null,
+        dueDate: dueDate || null,
+      });
 
-    // Reset
-    setTitle("");
-    setDescription("");
-    setStatus("todo");
-    setPriority("medium");
-    setTags("");
-    setAssignee("");
-    setDueDate("");
-    setOpen(false);
+      // Reset
+      setTitle("");
+      setDescription("");
+      setStatus("todo");
+      setPriority("medium");
+      setTags("");
+      setAssignee("");
+      setDueDate("");
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -139,13 +154,22 @@ export function CreateTaskDialog() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="assignee">Assignee</Label>
-              <Input
-                id="assignee"
+              <Label>Assignee</Label>
+              <Select
                 value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
-                placeholder="Agent name..."
-              />
+                onValueChange={setAssignee}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {AGENT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value || "none"} value={opt.value || "unassigned"}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -174,10 +198,20 @@ export function CreateTaskDialog() {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
+              disabled={saving}
             >
               Cancel
             </Button>
-            <Button type="submit">Create Task</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Task"
+              )}
+            </Button>
           </div>
         </form>
       </DialogContent>
