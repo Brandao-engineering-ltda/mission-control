@@ -3,7 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 
 // ============================================================
 // OpenClaw Webhook Handler
-// Receives lifecycle events from OpenClaw subagent spawns
+// Receives lifecycle events from OpenClaw hook handler
 // and auto-creates/updates tasks + logs in Supabase
 // ============================================================
 
@@ -14,27 +14,44 @@ const AGENT_NAMES: Record<string, string> = {
   marketer: "Marketer Agent",
   reviewer: "Reviewer Agent",
   ideator: "Ideator Agent",
+  main: "Maximo",
 };
 
-// Known event types from OpenClaw
-type EventType = "start" | "end" | "error" | "progress" | "document" | "heartbeat";
+// Known actions from the hook handler
+type ActionType = "start" | "end" | "error" | "progress" | "document";
 
 interface WebhookPayload {
-  event: EventType;
-  sessionId: string;
+  // Hook handler sends `action`, legacy format uses `event`
+  action?: ActionType;
+  event?: ActionType;
+  runId: string;
+  sessionKey: string;
+  timestamp?: string;
+  // start event
+  prompt?: string | null;
+  source?: string | null;
+  // end event
+  response?: string | null;
+  // error event
+  error?: string | null;
+  // progress event
+  message?: string | null;
+  // document event
+  agentId?: string | null;
+  document?: {
+    title: string;
+    content?: string;
+    type?: string;
+    path?: string;
+  } | null;
+  // generic
+  eventType?: string;
+  metadata?: Record<string, unknown>;
+  // Legacy fields (from old format)
   label?: string;
   task?: string;
   model?: string;
   result?: string;
-  error?: string;
-  progress?: string;
-  document?: {
-    title: string;
-    path?: string;
-    content?: string;
-  };
-  metadata?: Record<string, unknown>;
-  timestamp?: string;
 }
 
 // ============================================================
@@ -73,7 +90,7 @@ function derivePriority(text: string): string {
 // ============================================================
 // Tag derivation from task text
 // ============================================================
-function deriveTags(text: string, label?: string): string[] {
+function deriveTags(text: string, label?: string | null): string[] {
   const tags: string[] = [];
   const lower = text.toLowerCase();
 
@@ -119,6 +136,29 @@ function deriveTitle(taskText: string): string {
 }
 
 // ============================================================
+// Derive agent name from sessionKey or label
+// ============================================================
+function deriveAgentName(sessionKey: string, label?: string | null): string {
+  // If label provided, use it
+  if (label && AGENT_NAMES[label]) return AGENT_NAMES[label];
+  if (label) return label.charAt(0).toUpperCase() + label.slice(1) + " Agent";
+
+  // Try to extract from sessionKey format: "agent:main:subagent:uuid" or "agent:main:main"
+  const parts = sessionKey.split(":");
+  if (parts.length >= 2) {
+    const agentId = parts[1]; // "main", "developer", etc.
+    if (AGENT_NAMES[agentId]) return AGENT_NAMES[agentId];
+  }
+  // Check for subagent label in session key
+  if (parts.length >= 3 && parts[2] === "subagent") {
+    // Subagent — we don't know the label from the key alone
+    return "Subagent";
+  }
+
+  return "Unknown Agent";
+}
+
+// ============================================================
 // POST /api/webhook
 // ============================================================
 export async function POST(req: NextRequest) {
@@ -136,38 +176,45 @@ export async function POST(req: NextRequest) {
     }
 
     const payload: WebhookPayload = await req.json();
-    const {
-      event,
-      sessionId,
-      label,
-      task: taskText,
-      model,
-      result,
-      error: errorMsg,
-      progress,
-      document: doc,
-      metadata,
-      timestamp,
-    } = payload;
 
-    if (!event || !sessionId) {
+    // Normalize: hook handler sends `action`, legacy sends `event`
+    const action = (payload.action || payload.event) as ActionType | undefined;
+    const sessionKey = payload.sessionKey || "";
+    const runId = payload.runId || "";
+
+    if (!action || !sessionKey) {
       return NextResponse.json(
-        { error: "Missing required fields: event, sessionId" },
-        { status: 400 }
+        { error: "Missing required fields: action/event, sessionKey" },
+        { status: 400 },
       );
     }
 
     const supabase = getSupabaseServer();
-    const agentName = AGENT_NAMES[label || ""] || label || "Unknown Agent";
-    const now = timestamp || new Date().toISOString();
+    const agentName = deriveAgentName(sessionKey, payload.label);
+    const now = payload.timestamp || new Date().toISOString();
 
     // --------------------------------------------------------
-    // EVENT: start — create a new task + log
+    // ACTION: start — create a new task + log
     // --------------------------------------------------------
-    if (event === "start" && taskText) {
+    if (action === "start") {
+      const taskText = payload.prompt || payload.task || "";
+      if (!taskText) {
+        // No prompt — just log the start
+        await supabase.from("agent_logs").insert({
+          agent_name: agentName,
+          action: "Session started",
+          details: `Source: ${payload.source || "unknown"}`,
+          status: "info",
+          session_id: runId || sessionKey,
+          event_type: "start",
+          metadata: { runId, source: payload.source },
+        });
+        return NextResponse.json({ ok: true, event: "start", taskId: null });
+      }
+
       const title = deriveTitle(taskText);
       const priority = derivePriority(taskText);
-      const tags = deriveTags(taskText, label);
+      const tags = deriveTags(taskText, payload.label);
 
       const { data: newTask, error: taskError } = await supabase
         .from("tasks")
@@ -178,9 +225,15 @@ export async function POST(req: NextRequest) {
           priority,
           tags,
           assignee: agentName,
-          session_id: sessionId,
+          session_id: runId || sessionKey,
           source: "webhook",
-          metadata: { model, label, ...metadata },
+          metadata: {
+            runId,
+            source: payload.source,
+            label: payload.label,
+            model: payload.model,
+            ...(payload.metadata || {}),
+          },
         })
         .select()
         .single();
@@ -194,11 +247,11 @@ export async function POST(req: NextRequest) {
         agent_name: agentName,
         action: `Started: ${title}`,
         task_id: newTask.id,
-        details: `Model: ${model || "default"} | Priority: ${priority}`,
+        details: `Source: ${payload.source || "direct"} | Priority: ${priority}`,
         status: "info",
-        session_id: sessionId,
+        session_id: runId || sessionKey,
         event_type: "start",
-        metadata: { model, label, tags },
+        metadata: { runId, tags, source: payload.source },
       });
 
       return NextResponse.json({
@@ -209,17 +262,37 @@ export async function POST(req: NextRequest) {
     }
 
     // --------------------------------------------------------
-    // EVENT: end — mark task as done + log completion
+    // ACTION: end — mark task as done + log completion
     // --------------------------------------------------------
-    if (event === "end") {
-      const { data: existingTask } = await supabase
-        .from("tasks")
-        .select("id, title")
-        .eq("session_id", sessionId)
-        .neq("status", "done")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
+    if (action === "end") {
+      // Find task by runId first, then by sessionKey
+      let existingTask = null;
+
+      if (runId) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", runId)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      if (!existingTask) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", sessionKey)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      const responseText = payload.response || payload.result || null;
 
       if (existingTask) {
         await supabase
@@ -227,7 +300,10 @@ export async function POST(req: NextRequest) {
           .update({
             status: "done",
             completed_at: now,
-            metadata: { result: result?.substring(0, 2000), ...metadata },
+            metadata: {
+              response: responseText?.substring(0, 2000),
+              ...(payload.metadata || {}),
+            },
           })
           .eq("id", existingTask.id);
 
@@ -235,9 +311,9 @@ export async function POST(req: NextRequest) {
           agent_name: agentName,
           action: `Completed: ${existingTask.title}`,
           task_id: existingTask.id,
-          details: result?.substring(0, 500) || "Task completed successfully",
+          details: responseText?.substring(0, 500) || "Task completed successfully",
           status: "success",
-          session_id: sessionId,
+          session_id: runId || sessionKey,
           event_type: "end",
         });
 
@@ -248,12 +324,13 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // No matching task — just log it
       await supabase.from("agent_logs").insert({
         agent_name: agentName,
-        action: `Session completed`,
-        details: result?.substring(0, 500) || "Session ended",
+        action: "Session completed",
+        details: responseText?.substring(0, 500) || "Session ended",
         status: "success",
-        session_id: sessionId,
+        session_id: runId || sessionKey,
         event_type: "end",
       });
 
@@ -261,24 +338,43 @@ export async function POST(req: NextRequest) {
     }
 
     // --------------------------------------------------------
-    // EVENT: error — mark task for review + log error
+    // ACTION: error — mark task for review + log error
     // --------------------------------------------------------
-    if (event === "error") {
-      const { data: existingTask } = await supabase
-        .from("tasks")
-        .select("id, title")
-        .eq("session_id", sessionId)
-        .neq("status", "done")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
+    if (action === "error") {
+      let existingTask = null;
+
+      if (runId) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", runId)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      if (!existingTask) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", sessionKey)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      const errorMsg = payload.error || "Unknown error";
 
       if (existingTask) {
         await supabase
           .from("tasks")
           .update({
             status: "review",
-            metadata: { error: errorMsg, ...metadata },
+            metadata: { error: errorMsg, ...(payload.metadata || {}) },
           })
           .eq("id", existingTask.id);
 
@@ -286,9 +382,9 @@ export async function POST(req: NextRequest) {
           agent_name: agentName,
           action: `Error: ${existingTask.title}`,
           task_id: existingTask.id,
-          details: errorMsg || "Unknown error",
+          details: errorMsg,
           status: "error",
-          session_id: sessionId,
+          session_id: runId || sessionKey,
           event_type: "error",
         });
 
@@ -301,10 +397,10 @@ export async function POST(req: NextRequest) {
 
       await supabase.from("agent_logs").insert({
         agent_name: agentName,
-        action: `Error in session`,
-        details: errorMsg || "Unknown error",
+        action: "Error in session",
+        details: errorMsg,
         status: "error",
-        session_id: sessionId,
+        session_id: runId || sessionKey,
         event_type: "error",
       });
 
@@ -312,17 +408,36 @@ export async function POST(req: NextRequest) {
     }
 
     // --------------------------------------------------------
-    // EVENT: progress — update task + log progress
+    // ACTION: progress — update task + log progress
     // --------------------------------------------------------
-    if (event === "progress") {
-      const { data: existingTask } = await supabase
-        .from("tasks")
-        .select("id, title, metadata")
-        .eq("session_id", sessionId)
-        .neq("status", "done")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
+    if (action === "progress") {
+      let existingTask = null;
+
+      if (runId) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title, metadata")
+          .eq("session_id", runId)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      if (!existingTask) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title, metadata")
+          .eq("session_id", sessionKey)
+          .neq("status", "done")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      const progressMsg = payload.message || "Progress update";
 
       if (existingTask) {
         const existingMeta = (existingTask.metadata || {}) as Record<string, unknown>;
@@ -331,7 +446,7 @@ export async function POST(req: NextRequest) {
           .update({
             metadata: {
               ...existingMeta,
-              lastProgress: progress,
+              lastProgress: progressMsg,
               lastProgressAt: now,
             },
           })
@@ -341,9 +456,9 @@ export async function POST(req: NextRequest) {
           agent_name: agentName,
           action: `Progress: ${existingTask.title}`,
           task_id: existingTask.id,
-          details: progress || "Progress update",
+          details: progressMsg,
           status: "info",
-          session_id: sessionId,
+          session_id: runId || sessionKey,
           event_type: "progress",
         });
 
@@ -354,32 +469,65 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // No matching task — just log
+      await supabase.from("agent_logs").insert({
+        agent_name: agentName,
+        action: "Progress update",
+        details: progressMsg,
+        status: "info",
+        session_id: runId || sessionKey,
+        event_type: "progress",
+      });
+
       return NextResponse.json({ ok: true, event: "progress", taskId: null });
     }
 
     // --------------------------------------------------------
-    // EVENT: document — log artifact creation
+    // ACTION: document — log artifact creation
     // --------------------------------------------------------
-    if (event === "document" && doc) {
-      const { data: existingTask } = await supabase
-        .from("tasks")
-        .select("id, title")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
+    if (action === "document" && payload.document) {
+      const doc = payload.document;
+      let existingTask = null;
+
+      if (runId) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", runId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
+
+      if (!existingTask) {
+        const { data } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("session_id", sessionKey)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        existingTask = data;
+      }
 
       await supabase.from("agent_logs").insert({
         agent_name: agentName,
-        action: `Document: ${doc.title}`,
+        action: `📄 ${doc.title}`,
         task_id: existingTask?.id || null,
         details: doc.path
-          ? `Created ${doc.path}`
+          ? `Created ${doc.path} (${doc.type || "file"})`
           : doc.content?.substring(0, 300) || "Document created",
         status: "success",
-        session_id: sessionId,
+        session_id: runId || sessionKey,
         event_type: "document",
-        metadata: { document: { title: doc.title, path: doc.path } },
+        metadata: {
+          document: {
+            title: doc.title,
+            path: doc.path,
+            type: doc.type,
+          },
+        },
       });
 
       return NextResponse.json({
@@ -389,29 +537,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // --------------------------------------------------------
-    // EVENT: heartbeat — just log, no task mutation
-    // --------------------------------------------------------
-    if (event === "heartbeat") {
-      return NextResponse.json({ ok: true, event: "heartbeat" });
-    }
-
-    // Unknown event — log it
+    // Unknown action — log it
     await supabase.from("agent_logs").insert({
       agent_name: agentName,
-      action: `Unknown event: ${event}`,
+      action: `Unknown: ${action}`,
       details: JSON.stringify(payload).substring(0, 500),
       status: "warning",
-      session_id: sessionId,
-      event_type: event,
+      session_id: runId || sessionKey,
+      event_type: String(action),
     });
 
-    return NextResponse.json({ ok: true, event });
+    return NextResponse.json({ ok: true, event: action });
   } catch (err) {
     console.error("[Webhook] Unhandled error:", err);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -421,6 +562,8 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     service: "mission-control-webhook",
-    events: ["start", "end", "error", "progress", "document", "heartbeat"],
+    version: "2.0",
+    actions: ["start", "end", "error", "progress", "document"],
+    format: "Accepts both { action } and { event } field names",
   });
 }

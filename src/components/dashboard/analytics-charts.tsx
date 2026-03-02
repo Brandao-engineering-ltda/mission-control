@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart,
@@ -38,16 +39,33 @@ export function AnalyticsCharts() {
     })
   );
 
-  // Simulated velocity data (last 7 days)
-  const velocityData = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - i));
-    const dayStr = date.toLocaleDateString("en-US", { weekday: "short" });
-    // Simulate some data
-    const created = Math.floor(Math.random() * 4) + 1;
-    const completed = Math.floor(Math.random() * 3);
-    return { day: dayStr, created, completed };
-  });
+  // Real velocity data — tasks created/completed per day over last 7 days
+  const velocityData = useMemo(() => {
+    const days: { day: string; created: number; completed: number }[] = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const dayEnd = new Date(dayStart.getTime() + 86400000);
+      const dayStr = date.toLocaleDateString("en-US", { weekday: "short" });
+
+      const created = tasks.filter((t) => {
+        const d = new Date(t.createdAt);
+        return d >= dayStart && d < dayEnd;
+      }).length;
+
+      const completed = tasks.filter((t) => {
+        if (!t.completedAt) return false;
+        const d = new Date(t.completedAt);
+        return d >= dayStart && d < dayEnd;
+      }).length;
+
+      days.push({ day: dayStr, created, completed });
+    }
+
+    return days;
+  }, [tasks]);
 
   return (
     <motion.div
